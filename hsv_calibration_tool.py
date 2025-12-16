@@ -53,19 +53,33 @@ def main():
     cv2.createTrackbar("U - S", "Trackbars", 255, 255, nothing)
     cv2.createTrackbar("U - V", "Trackbars", 255, 255, nothing)
 
-    print("✅ HSV Calibration Tool Started")
     print("-----------------------------------")
     print("Adjust trackbars to isolate the desired color.")
+    print("CLICK on the camera view to see HSV values!")
     print("Press 'q' to quit.")
     print("-----------------------------------")
 
+    # 마우스 클릭 이벤트 함수
+    def pick_color(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            pixel = frame[y, x]
+            # BGR to HSV 변환
+            pixel_hsv = cv2.cvtColor(np.uint8([[pixel]]), cv2.COLOR_BGR2HSV)[0][0]
+            print(f"🎯 Clicked Pixel (x={x}, y={y}): HSV[{pixel_hsv[0]}, {pixel_hsv[1]}, {pixel_hsv[2]}]")
+            print(f"   -> Suggestion: Set Lower slightly below and Upper slightly above this.")
+
+    cv2.setMouseCallback("Original", pick_color)
+
     while True:
+        global frame # 마우스 콜백에서 접근하기 위해 global 사용 (또는 param으로 전달)
         ret, frame = cap.read()
         if not ret:
             break
             
         frame = cv2.resize(frame, (320, 240))
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        
+        cv2.putText(frame, "CLICK to check HSV", (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
 
         # 트랙바 값 읽기
         l_h = cv2.getTrackbarPos("L - H", "Trackbars")
