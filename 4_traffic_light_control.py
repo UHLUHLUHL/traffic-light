@@ -114,24 +114,22 @@ DEFAULT_SERVO_1 = 95
 DEFAULT_SERVO_2 = 0
 
 # ============================
-# 🎨 HSV 색상 캘리브레이션 값 (User Calibration)
 # ============================
-# hsv_calibration_tool.py로 측정한 값을 여기에 입력하세요.
-# 지금은 기본값(일반적인 LED)으로 설정되어 있습니다.
+# 🎨 YCrCb 색상 캘리브레이션 값 (User Calibration)
+# ============================
+# ycrcb_calibration_tool.py로 측정한 값을 여기에 입력하세요.
+# [신호등 LED 감지 핵심 전략]
+# 1. 켜진 불(ON)은 매우 밝습니다 -> Y(밝기) >= 180
+# 2. 하얗게 보여도 붉은 기운이 남습니다 -> Cr(붉은색) >= 135
+# 3. 나머지는 무시해도 됩니다.
 
-# 빨간불 (RED ON)
-RED_LOWER_1 = np.array([0, 50, 180])
-RED_UPPER_1 = np.array([10, 255, 255])
-RED_LOWER_2 = np.array([160, 50, 180])
-RED_UPPER_2 = np.array([180, 255, 255])
+# 빨간불 (RED ON - Bright & Reddish)
+RED_LOWER = np.array([180, 135, 0])
+RED_UPPER = np.array([255, 255, 130])
 
-# 초록불 (GREEN ON)
-GREEN_LOWER = np.array([40, 50, 180])
-GREEN_UPPER = np.array([90, 255, 255])
-
-# 노란불 (YELLOW ON) - 필요한 경우 사용
-YELLOW_LOWER = np.array([15, 50, 180])
-YELLOW_UPPER = np.array([35, 255, 255])
+# 참고: 초록불은 Cr이 낮고 Cb가 높음 (필요시 추가)
+GREEN_LOWER = np.array([180, 0, 120]) 
+GREEN_UPPER = np.array([255, 110, 255])
 
 # 디버그 모드
 DEBUG_MODE = True
@@ -651,27 +649,22 @@ print("=" * 50)
 
 def verify_traffic_light_color(roi_frame, color_type):
     """
-    HSV 색상 검증 함수 (Hybrid 방식 핵심)
+    YCrCb 색상 검증 함수 (Hybrid 방식 핵심)
     
-    Cascade로 찾은 영역(ROI)이 실제로 해당 색깔을 포함하고 있는지 검사
-    상단에 정의된 캘리브레이션 값(RED_LOWER 등)을 사용합니다.
+    HSV 대신 YCrCb를 사용하여 "너무 밝아서 하얗게 보이는" 신호등도 감지합니다.
     """
     if roi_frame is None or roi_frame.size == 0:
         return False
         
-    hsv = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2HSV)
+    # BGR -> YCrCb 변환
+    ycrcb = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2YCrCb)
     
     # 1. 색상 범위 설정 (Global Variables 사용)
     if color_type == 'RED':
-        mask1 = cv2.inRange(hsv, RED_LOWER_1, RED_UPPER_1)
-        mask2 = cv2.inRange(hsv, RED_LOWER_2, RED_UPPER_2)
-        mask = cv2.bitwise_or(mask1, mask2)
+        mask = cv2.inRange(ycrcb, RED_LOWER, RED_UPPER)
         
     elif color_type == 'GREEN':
-        mask = cv2.inRange(hsv, GREEN_LOWER, GREEN_UPPER)
-        
-    elif color_type == 'YELLOW':
-        mask = cv2.inRange(hsv, YELLOW_LOWER, YELLOW_UPPER)
+        mask = cv2.inRange(ycrcb, GREEN_LOWER, GREEN_UPPER)
         
     else:
         return False
@@ -693,11 +686,11 @@ def detect_traffic_lights(
     detect_frame, display_frame, r_weight, g_weight, b_weight, frame_source=0
 ):
     """
-    신호등 감지 함수 (Hybrid: Single XML Shape + HSV Color Verification)
+    신호등 감지 함수 (Hybrid: Single XML Shape + YCrCb Color Verification)
     
     로직:
-    1. XML로 '신호등 모양' 감지
-    2. 내부 색상 확인 (RED인지? 그 외인지?)
+    1. XML로 '신호등 모양' 감지 (Positive)
+    2. 내부 색상 확인 (YCrCb로 밝은 빨간불인지 확인)
     3. RED면 정지 신호, 그 외에는 주행 신호로 판단
     """
     # 1. ROI 설정 (신호등은 보통 상단이나 측면에 있지만, 바닥 신호등일 경우 하단)
@@ -750,13 +743,11 @@ def detect_traffic_lights(
             elif verify_traffic_light_color(light_roi, 'GREEN'):
                 is_green = True
                 final_green_lights.append((global_x, global_y, w, h))
-            elif verify_traffic_light_color(light_roi, 'YELLOW'):
-                 is_yellow = True
-                 # 노란불도 일단은 '주행(GO)'으로 처리 (초록 목록에 넣지는 않음)
-        
+            # 노란불 관련 코드는 YCrCb 로직 단순화를 위해 제거 (필요시 추가 가능)
+            
         detected_traffic_lights_info.append({
             "rect": (global_x, global_y, w, h),
-            "color": "RED" if is_red else "GREEN" if is_green else "YELLOW" if is_yellow else "OFF"
+            "color": "RED" if is_red else "GREEN" if is_green else "OFF"
         })
 
     # 빨간불이 하나라도 있으면 STOP
@@ -788,7 +779,7 @@ def detect_traffic_lights(
     )
     
     # 하이브리드 모드 표시
-    cv2.putText(annotated_frame, "HYBRID: Shape + Color Logic", (10, h - 30), 
+    cv2.putText(annotated_frame, "HYBRID: Shape + YCrCb (White-Red)", (10, h - 30), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
     # 감지 정보 저장
